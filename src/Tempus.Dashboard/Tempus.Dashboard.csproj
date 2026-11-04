@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <RootNamespace>Tempus.Dashboard</RootNamespace>
+    <PackageId>Blixter.Tempus.Dashboard</PackageId>
+    <IsPackable>true</IsPackable>
+    <Description>Embedded web dashboard and JSON API for Tempus.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../Tempus/Tempus.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="wwwroot/**" />
+  </ItemGroup>
+</Project>

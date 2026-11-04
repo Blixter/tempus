@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+      - name: Build and test
+        run: ./build.sh test
+      - name: Pack (preview version)
+        run: ./build.sh pack "$(sed -n 's:.*<VersionPrefix>\(.*\)</VersionPrefix>.*:\1:p' Directory.Build.props)-ci.${{ github.run_number }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: artifacts/*

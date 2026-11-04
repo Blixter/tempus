@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <RootNamespace>Tempus.Integrations</RootNamespace>
+    <PackageId>Blixter.Tempus.Integrations</PackageId>
+    <IsPackable>true</IsPackable>
+    <Description>Slack, Microsoft Teams and webhook failure alerts for Tempus.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Tempus/Tempus.csproj" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.14" />
+  </ItemGroup>
+</Project>

@@ -373,9 +373,20 @@ explicit version get a `-dev.<timestamp>` suffix (local) or a `-ci.<run>` suffix
 1. Bump `VersionPrefix` in `Directory.Build.props` if needed and commit.
 2. Tag and push: `git tag v0.2.0 && git push origin v0.2.0`. Use a tag like `v0.2.0-beta.1` for previews.
 3. The **Release** workflow tests, packs, pushes to GitHub Packages, and creates a GitHub release with the `.nupkg` files attached.
-   If a `NUGET_API_KEY` repository secret exists, it also pushes to nuget.org.
+   When the repository variable `NUGET_USER` is set, it also pushes to nuget.org (see below).
 
 You can also start the Release workflow by hand from the Actions tab with a version input.
+
+**Publishing to nuget.org** uses [Trusted Publishing](https://learn.microsoft.com/nuget/nuget-org/trusted-publishing),
+so no API key is stored anywhere. One-time setup:
+
+1. On nuget.org, open your username menu, choose **Trusted Publishing** and add a policy with repository owner
+   `Blixter`, repository `tempus`, workflow file `release.yml`, and no environment.
+2. Set the repository variable to your nuget.org profile name (not your email):
+   `gh variable set NUGET_USER --repo Blixter/tempus --body <profile-name>`.
+
+Each release then requests a one-hour API key from nuget.org through GitHub's identity token and pushes all packages.
+Versions published to nuget.org can be unlisted but never deleted.
 
 Every push and pull request runs the **CI** workflow: build, every test against SQLite, PostgreSQL, SQL Server and the
 Cosmos DB emulator, and preview packages as a build artifact.

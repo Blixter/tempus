@@ -78,6 +78,7 @@ h3 { font-size: 13px; margin: 0 0 8px; font-weight: 600; color: var(--fg-muted);
 /* cards */
 .card { background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; }
 .card + .card { margin-top: 14px; }
+.grid > .card + .card, .chain-layout > .card + .card { margin-top: 0; } /* grids space their cells with gap */
 .grid { display: grid; gap: 14px; }
 .grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }

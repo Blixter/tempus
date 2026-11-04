@@ -6,14 +6,31 @@
     <IsPackable>true</IsPackable>
     <Description>Tempus core: background job scheduler with one-time jobs, cron jobs, chains, schedule policies, retries and an in-memory store.</Description>
   </PropertyGroup>
+  <!-- Microsoft.Extensions packages follow the target framework, so a net8 or net9 app is not pulled up to the .NET 10 abstractions.
+       System.Diagnostics.DiagnosticSource ships with the runtime on every target, so it needs no package. -->
   <ItemGroup>
     <PackageReference Include="Cronos" Version="0.13.0" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.3" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="8.0.2" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="8.0.0" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.22" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.22" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.22" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="9.0.22" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="9.0.22" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.14" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.14" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.14" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.14" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.14" />
-    <PackageReference Include="System.Diagnostics.DiagnosticSource" Version="10.0.14" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Tempus.Tests" />

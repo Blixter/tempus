@@ -6,7 +6,7 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
     <!-- Versioning: bump VersionPrefix for the next release. CI/scripts override with -p:Version=x.y.z -->
-    <VersionPrefix>0.2.0</VersionPrefix>
+    <VersionPrefix>0.2.1</VersionPrefix>
 
     <!-- Package metadata shared by every package -->
     <Authors>Robin Blixter</Authors>

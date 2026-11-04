@@ -17,7 +17,7 @@ No license file, no revenue cap.
 ## Quick start
 
 The namespaces in code are `Tempus.*`. The NuGet IDs carry a `Blixter.` prefix because `Tempus` is already taken on nuget.org.
-See [Installing the packages](#installing-the-packages) for how to add the feed.
+They are on [nuget.org](https://www.nuget.org/packages?q=Blixter.Tempus), so no extra feed is needed.
 
 ```sh
 dotnet add package Blixter.Tempus
@@ -300,11 +300,23 @@ the AI assistant, a Roslyn source generator / Native AOT support (attribute disc
 
 ## Installing the packages
 
-Packages are published to **GitHub Packages** on every release tag. You can also build them yourself into a local feed.
+Every release tag publishes the packages to **nuget.org** and **GitHub Packages**. You can also build them yourself into a local feed.
 
-### Option A: GitHub Packages feed
+### Option A: nuget.org (recommended)
 
-GitHub requires a token to read NuGet packages, even public ones. Create a classic personal access token with the
+```sh
+dotnet add package Blixter.Tempus
+```
+
+No feed setup or token is needed. Package pages: [Blixter.Tempus](https://www.nuget.org/packages/Blixter.Tempus),
+[EntityFrameworkCore](https://www.nuget.org/packages/Blixter.Tempus.EntityFrameworkCore),
+[Cosmos](https://www.nuget.org/packages/Blixter.Tempus.Cosmos),
+[Dashboard](https://www.nuget.org/packages/Blixter.Tempus.Dashboard),
+[Integrations](https://www.nuget.org/packages/Blixter.Tempus.Integrations).
+
+### Option B: GitHub Packages feed
+
+The same versions are mirrored here. GitHub requires a token to read NuGet packages, even public ones. Create a classic personal access token with the
 `read:packages` scope, then add the feed once per machine:
 
 ```sh
@@ -338,7 +350,7 @@ Or commit a `nuget.config` next to your solution and keep the token in an enviro
 </configuration>
 ```
 
-### Option B: local feed (no token needed)
+### Option C: local feed (no token needed)
 
 ```sh
 git clone https://github.com/Blixter/tempus && cd tempus
@@ -350,7 +362,7 @@ The first run registers `~/.nuget/local-feed` as the NuGet source `tempus-local`
 into it, so `dotnet add package Blixter.Tempus --version <version>` picks them up straight away.
 Set `TEMPUS_LOCAL_FEED` to use another folder, for example a network share.
 
-### Option C: project references
+### Option D: project references
 
 Reference the projects under `src/` directly if you vendor the repository as a git submodule.
 

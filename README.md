@@ -2,13 +2,15 @@
 
 An open source (MIT) background job scheduler and workflow library for .NET 8, 9 and 10.
 It runs one-time jobs, recurring cron functions and multi-step workflows inside your own host
-(ASP.NET Core or a worker service), with persistence in EF Core, a built-in dashboard and
-optional Slack / Teams / webhook alerts. No license file, no revenue cap.
+(ASP.NET Core or a worker service), with persistence in SQL Server, PostgreSQL, SQLite (EF Core) or Azure Cosmos DB,
+a built-in dashboard and optional Slack / Teams / webhook alerts. One database can serve many applications.
+No license file, no revenue cap.
 
 | Package (NuGet ID) | What it gives you |
 |---|---|
 | `Blixter.Tempus` | Core scheduler, managers, chains, schedule policies, retries, execution logs, in-memory store |
-| `Blixter.Tempus.EntityFrameworkCore` | Operational store on any relational EF Core provider, transactional scheduling (`StageAsync`) |
+| `Blixter.Tempus.EntityFrameworkCore` | Store on relational databases through EF Core, transactional scheduling (`StageAsync`), automatic table provisioning |
+| `Blixter.Tempus.Cosmos` | Store on Azure Cosmos DB: one container, partitioned per application |
 | `Blixter.Tempus.Dashboard` | Embedded web dashboard + JSON API (basic auth, API key, host auth, read-only mode) |
 | `Blixter.Tempus.Integrations` | Failure / timeout / stale-recovery alerts to Slack, Microsoft Teams or custom webhooks |
 
@@ -66,6 +68,110 @@ example lives in `samples/Tempus.Sample`.
 
 > On EF Core 8 (net8.0) the automatic model hook is not available: call `optionsBuilder.UseTempus()` inside
 > `AddDbContext`, or `modelBuilder.ApplyTempusConfigurations("tempus")` in `OnModelCreating`. EF Core 9/10 wire it up automatically.
+
+## Storage
+
+| Store | Package | Tested in CI | Notes |
+|---|---|---|---|
+| SQL Server | `Blixter.Tempus.EntityFrameworkCore` | yes | Tables in schema `tempus` |
+| PostgreSQL | `Blixter.Tempus.EntityFrameworkCore` | yes | Tables in schema `tempus` |
+| SQLite | `Blixter.Tempus.EntityFrameworkCore` | yes | No schemas; fine for one machine |
+| MySQL / MariaDB, Oracle | `Blixter.Tempus.EntityFrameworkCore` | no | Any relational EF Core provider should work |
+| Azure Cosmos DB | `Blixter.Tempus.Cosmos` | yes (emulator) | No transactional scheduling (`StageAsync`) |
+| In-memory | built in | yes | Development only, lost on restart |
+
+### How applications are kept apart
+
+Every application calls `options.UseApplicationNamespace("<name>")`. The namespace is stored on every row or document and
+every query is filtered by it, so applications that share a database never see or run each other's jobs, crons,
+schedule policies, nodes or logs. Replicas of one application share its namespace; that is how they cluster.
+
+Rules of thumb:
+
+* Give every application its own namespace. Tempus warns at startup if you keep the name `default`, and warns again
+  if nodes in one namespace register different functions, which usually means two applications picked the same name.
+* `UseApplicationNamespace("orders", builder.Environment)` appends the environment (`orders-production`), so staging and
+  production can even share a database.
+* Namespaces are at most 128 characters. Names starting with `$` are reserved.
+
+### One relational database for many applications
+
+Point every application at the same database and let Tempus manage its own tables:
+
+```csharp
+// Application "orders"
+options.UseApplicationNamespace("orders", builder.Environment);
+options.AddOperationalStore(store => store
+    .UseTempusDbContext<TempusDbContext>(db => db.UseSqlServer(sharedConnectionString))
+    .AutoProvisionTables());
+
+// Application "billing": same database, different namespace
+options.UseApplicationNamespace("billing", builder.Environment);
+options.AddOperationalStore(store => store
+    .UseTempusDbContext<TempusDbContext>(db => db.UseSqlServer(sharedConnectionString))
+    .AutoProvisionTables());
+```
+
+`AutoProvisionTables()` does three things at startup:
+
+1. Creates the database (if missing) and the Tempus tables in the `tempus` schema. Several applications starting at the
+   same time are fine: the loser of the race re-checks and continues.
+2. Records the table layout version in the database. An application running an older Tempus build that does not
+   understand a newer layout refuses to start, with a message telling you to upgrade its packages. Upgrade all
+   applications that share a database to the same Tempus version.
+3. With `UseApplicationDbContext<AppDbContext>()`, the Tempus tables stay mapped in your context, so `StageAsync`
+   keeps working, but they are excluded from your migrations. No application owns them, so migrations never collide.
+
+```csharp
+// Keep your own DbContext for transactional scheduling, without Tempus tables in your migrations.
+options.AddOperationalStore(store => store
+    .UseApplicationDbContext<AppDbContext>()
+    .AutoProvisionTables());
+```
+
+If you would rather keep Tempus in your own migrations, leave `AutoProvisionTables()` off and give each application its
+own schema with `store.UseSchema("orders_tempus")`, so their migrations do not touch the same tables.
+
+### Azure Cosmos DB
+
+```sh
+dotnet add package Blixter.Tempus.Cosmos
+```
+
+```csharp
+using Tempus.Cosmos;
+
+options.UseApplicationNamespace("orders", builder.Environment);
+options.AddCosmosStore(cosmos =>
+{
+    cosmos.ConnectionString = builder.Configuration.GetConnectionString("Cosmos");
+    cosmos.DatabaseName = "tempus";     // default
+    cosmos.ContainerName = "tempus";    // default
+});
+```
+
+* **One container is all you need.** It uses partition key `/pk`, and every application's documents live in the
+  partition named after its namespace. Any number of applications can share the database and the container.
+* `CreateIfNotExists` (default on) creates the database and container at startup with TTL enabled.
+  Set `ContainerThroughput`, `ContainerAutoscaleMaxThroughput` or `DatabaseThroughput` for provisioned accounts;
+  leave them unset on serverless accounts.
+* To use an existing container, it must have partition key path `/pk`. Turn on TTL (`DefaultTimeToLive = -1`) so
+  logs and housekeeping documents expire on their own.
+* Authenticate with `ConnectionString`, `AccountEndpoint` + `AccountKey`, `AccountEndpoint` + `Credential`
+  (for example `DefaultAzureCredential`), or hand over your own `Client` / `ClientFactory`. Tempus reads and writes raw
+  JSON, so your client's serializer settings do not matter.
+* For the local emulator, use `cosmos.ConfigureClientOptions = o => { o.ConnectionMode = ConnectionMode.Gateway; o.LimitToEndpoint = true; };`.
+
+How it works: jobs are claimed with ETag-conditional replaces, so only one node wins a job. Leases and progress
+use conditional patches fenced by the claim token, and cron occurrences are created together with a uniqueness marker
+in one transactional batch. Chains of up to 100 jobs are written atomically; larger ones are written in batches of 100.
+
+Things to know:
+
+* `StageAsync` (saving a job in the same transaction as your own data) only exists for EF Core.
+* The scheduler queries the store every few seconds while busy and every 30 seconds when idle (`FallbackIntervalChecker`).
+  That costs request units around the clock, so check the bill on serverless accounts.
+* Each application's data is one logical partition, limited to 20 GB and 10,000 RU/s. Retention keeps it small.
 
 ## Defining jobs
 
@@ -185,7 +291,8 @@ seeds (`SeedCronTickers`, `SeedTimeTickers`, `SeedSchedulePolicies`, code seeder
 in-place retry, recurring chains with overlap policy, schedule policies with date providers and composition, late starts and catch-up, retries and backoff helpers,
 timeouts, cooperative and cross-node cancellation, leases and stale recovery, priorities and per-function concurrency, retention, execution-log capture,
 progress reporting, test runs, exception handler, failure notifier, application namespaces, node registry, control commands, EF Core store with
-transactional scheduling, dashboard with API and SPA, Slack / Teams / webhook alerts, OpenTelemetry-compatible activity source and meter, `ITickerClock` for tests.
+transactional scheduling and automatic table provisioning, Cosmos DB store, dashboard with API and SPA, Slack / Teams / webhook alerts,
+OpenTelemetry-compatible activity source and meter, `ITickerClock` for tests.
 
 Not implemented (yet): MongoDB and Redis stores, SignalR live push (the dashboard polls), dashboard drafts/templates and the visual chain builder,
 built-in JWT/cookie users (use host auth, basic auth or an API key), alert monitors (deadline / slow / repeated failure) and message templates,
@@ -251,8 +358,10 @@ Reference the projects under `src/` directly if you vendor the repository as a g
 
 | Command | What it does |
 |---|---|
-| `./build.sh test` | Release build of the whole solution and the test suite |
-| `./build.sh pack [version]` | Packs all four packages (with `.snupkg` symbols) into `./artifacts` |
+| `./build.sh test` | Release build and tests. Runs on SQLite and in-memory, plus any database configured through the variables below |
+| `./build.sh test-all` | Starts PostgreSQL, SQL Server and the Cosmos DB emulator in containers (docker or podman) and runs every test |
+| `./build.sh db-up` / `db-down` | Starts or removes those containers |
+| `./build.sh pack [version]` | Packs all packages (with `.snupkg` symbols) into `./artifacts` |
 | `./build.sh local [version]` | Packs and publishes into the local feed |
 | `./build.sh push <version>` | Packs and pushes to GitHub Packages (needs `GITHUB_TOKEN` with `write:packages`) |
 
@@ -268,7 +377,20 @@ explicit version get a `-dev.<timestamp>` suffix (local) or a `-ci.<run>` suffix
 
 You can also start the Release workflow by hand from the Actions tab with a version input.
 
-Every push and pull request runs the **CI** workflow (build, tests, preview packages as a build artifact).
+Every push and pull request runs the **CI** workflow: build, every test against SQLite, PostgreSQL, SQL Server and the
+Cosmos DB emulator, and preview packages as a build artifact.
+
+The database tests read these variables and are skipped (Cosmos) or limited to SQLite (relational) when they are not set:
+
+| Variable | Example |
+|---|---|
+| `TEMPUS_TEST_POSTGRES` | `Host=127.0.0.1;Port=55432;Username=postgres` (trust auth in the test container) |
+| `TEMPUS_TEST_SQLSERVER` | `Server=127.0.0.1,51433;User Id=sa;Password=<generated>;TrustServerCertificate=true` |
+| `TEMPUS_TEST_COSMOS` | `AccountEndpoint=http://127.0.0.1:58081/;AccountKey=<any base64>;` (the emulator accepts any key) |
+
+`./build.sh db-up` generates a random SQL Server password into `.tempus-test-db.env` (git-ignored); `test-all` exports
+the variables for you. Each test creates its own database, so you can point them at a shared development server. Use `127.0.0.1` rather than
+`localhost` for containers: some rootless setups reset IPv6 connections to forwarded ports.
 
 ## Development
 
@@ -282,10 +404,11 @@ Repository layout:
 
 ```
 src/Tempus                       core scheduler
-src/Tempus.EntityFrameworkCore   EF Core store
+src/Tempus.EntityFrameworkCore   EF Core store (SQL Server, PostgreSQL, SQLite, ...)
+src/Tempus.Cosmos                Azure Cosmos DB store
 src/Tempus.Dashboard             dashboard API + embedded SPA (wwwroot)
 src/Tempus.Integrations          Slack / Teams / webhook alerts
-tests/Tempus.Tests               xUnit tests (in-memory, SQLite, TestServer)
+tests/Tempus.Tests               xUnit tests (in-memory, SQLite, PostgreSQL, SQL Server, Cosmos DB, TestServer)
 samples/Tempus.Sample            ASP.NET Core sample with EF Core, dashboard and workflows
 docs/architecture.md             how the pieces fit together
 build.sh                         build / pack / publish helper

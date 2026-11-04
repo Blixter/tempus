@@ -24,7 +24,9 @@ public static class TempusEfServiceCollectionExtensions
         builder.UsePersistenceProvider(sp => new EfPersistenceProvider(sp, contextType, sp.GetRequiredService<TempusOptions>().Namespace), $"EF Core ({contextType.Name}, schema '{store.Schema}')");
         builder.AddExtension(services =>
         {
-            services.AddSingleton(new TempusEfSchema(store.Schema));
+            services.AddSingleton(new TempusEfSchema(store.Schema, excludeFromMigrations: store.AutoProvision && store.ApplicationContext));
+            if (store.AutoProvision)
+                services.AddSingleton<Tempus.Persistence.ITempusStoreInitializer>(sp => new TempusSchemaProvisioner(sp, contextType, store.ApplicationContext, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TempusSchemaProvisioner>>()));
             if (store.ApplicationContext)
             {
                 if (store.ConfigurationType == ConfigurationType.UseModelCustomizer)
@@ -86,10 +88,11 @@ public sealed class TempusModelCustomizer : ModelCustomizer
     {
         base.Customize(modelBuilder, context);
         if (modelBuilder.Model.FindEntityType(typeof(TimeTickerEntity)) is not null) return; // already applied in OnModelCreating
-        var schema = context.GetService<IDbContextOptions>().FindExtension<CoreOptionsExtension>()?.ApplicationServiceProvider?.GetService<TempusEfSchema>()?.Schema
-            ?? (context as TempusDbContext)?.Schema ?? "tempus";
+        var settings = context.GetService<IDbContextOptions>().FindExtension<CoreOptionsExtension>()?.ApplicationServiceProvider?.GetService<TempusEfSchema>();
+        string? schema = settings?.Schema ?? (context as TempusDbContext)?.Schema ?? "tempus";
+        var exclude = settings?.ExcludeFromMigrations == true && context is not TempusDbContext;
         if (context.Database.ProviderName?.Contains("Sqlite", StringComparison.OrdinalIgnoreCase) == true) schema = null;
-        modelBuilder.ApplyTempusConfigurations(schema);
+        modelBuilder.ApplyTempusConfigurations(schema, exclude);
     }
 }
 

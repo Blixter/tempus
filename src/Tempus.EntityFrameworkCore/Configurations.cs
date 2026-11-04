@@ -11,16 +11,17 @@ namespace Tempus.EntityFrameworkCore;
 public static class TempusModelBuilderExtensions
 {
     /// <summary>Map every Tempus table. Call from OnModelCreating when using <see cref="ConfigurationType.IgnoreModelCustomizer"/>.</summary>
-    public static ModelBuilder ApplyTempusConfigurations(this ModelBuilder modelBuilder, string? schema = "tempus")
+    /// <param name="excludeFromMigrations">Map the tables but leave them out of this context's migrations (Tempus provisions them itself).</param>
+    public static ModelBuilder ApplyTempusConfigurations(this ModelBuilder modelBuilder, string? schema = "tempus", bool excludeFromMigrations = false)
     {
-        modelBuilder.ApplyConfiguration(new TimeTickerConfiguration(schema));
-        modelBuilder.ApplyConfiguration(new CronTickerConfiguration(schema));
-        modelBuilder.ApplyConfiguration(new CronTickerOccurrenceConfiguration(schema));
-        modelBuilder.ApplyConfiguration(new SchedulePolicyConfiguration(schema));
-        modelBuilder.ApplyConfiguration(new TempusNodeConfiguration(schema));
-        modelBuilder.ApplyConfiguration(new ControlCommandConfiguration(schema));
-        modelBuilder.ApplyConfiguration(new ExecutionLogConfiguration(schema));
-        modelBuilder.ApplyConfiguration(new StoreMetadataConfiguration(schema));
+        modelBuilder.ApplyConfiguration(new TimeTickerConfiguration(schema, excludeFromMigrations));
+        modelBuilder.ApplyConfiguration(new CronTickerConfiguration(schema, excludeFromMigrations));
+        modelBuilder.ApplyConfiguration(new CronTickerOccurrenceConfiguration(schema, excludeFromMigrations));
+        modelBuilder.ApplyConfiguration(new SchedulePolicyConfiguration(schema, excludeFromMigrations));
+        modelBuilder.ApplyConfiguration(new TempusNodeConfiguration(schema, excludeFromMigrations));
+        modelBuilder.ApplyConfiguration(new ControlCommandConfiguration(schema, excludeFromMigrations));
+        modelBuilder.ApplyConfiguration(new ExecutionLogConfiguration(schema, excludeFromMigrations));
+        modelBuilder.ApplyConfiguration(new StoreMetadataConfiguration(schema, excludeFromMigrations));
         return modelBuilder;
     }
 
@@ -39,7 +40,7 @@ public static class TempusModelBuilderExtensions
     internal static void ConfigureExecution<T>(EntityTypeBuilder<T> b) where T : TickerExecutionEntity
     {
         b.HasKey(x => x.Id);
-        b.Property(x => x.Namespace).HasMaxLength(512).IsRequired();
+        b.Property(x => x.Namespace).HasMaxLength(128).IsRequired();
         b.Property(x => x.Function).HasMaxLength(256).IsRequired();
         b.Property(x => x.Description).HasMaxLength(1024);
         b.Property(x => x.Status).HasConversion<int>();
@@ -66,11 +67,11 @@ public static class TempusModelBuilderExtensions
     }
 }
 
-public sealed class TimeTickerConfiguration(string? schema) : IEntityTypeConfiguration<TimeTickerEntity>
+public sealed class TimeTickerConfiguration(string? schema, bool excludeFromMigrations = false) : IEntityTypeConfiguration<TimeTickerEntity>
 {
     public void Configure(EntityTypeBuilder<TimeTickerEntity> b)
     {
-        b.ToTable("TimeTickers", schema);
+        b.ToTable("TimeTickers", schema, t => { if (excludeFromMigrations) t.ExcludeFromMigrations(); });
         TempusModelBuilderExtensions.ConfigureExecution(b);
         b.Property(x => x.RunCondition).HasConversion<int>();
         b.Property(x => x.JoinKind).HasConversion<int>();
@@ -88,13 +89,13 @@ public sealed class TimeTickerConfiguration(string? schema) : IEntityTypeConfigu
     }
 }
 
-public sealed class CronTickerConfiguration(string? schema) : IEntityTypeConfiguration<CronTickerEntity>
+public sealed class CronTickerConfiguration(string? schema, bool excludeFromMigrations = false) : IEntityTypeConfiguration<CronTickerEntity>
 {
     public void Configure(EntityTypeBuilder<CronTickerEntity> b)
     {
-        b.ToTable("CronTickers", schema);
+        b.ToTable("CronTickers", schema, t => { if (excludeFromMigrations) t.ExcludeFromMigrations(); });
         b.HasKey(x => x.Id);
-        b.Property(x => x.Namespace).HasMaxLength(512).IsRequired();
+        b.Property(x => x.Namespace).HasMaxLength(128).IsRequired();
         b.Property(x => x.Function).HasMaxLength(256).IsRequired();
         b.Property(x => x.Expression).HasMaxLength(128).IsRequired();
         b.Property(x => x.Description).HasMaxLength(1024);
@@ -117,24 +118,24 @@ public sealed class CronTickerConfiguration(string? schema) : IEntityTypeConfigu
     }
 }
 
-public sealed class CronTickerOccurrenceConfiguration(string? schema) : IEntityTypeConfiguration<CronTickerOccurrenceEntity>
+public sealed class CronTickerOccurrenceConfiguration(string? schema, bool excludeFromMigrations = false) : IEntityTypeConfiguration<CronTickerOccurrenceEntity>
 {
     public void Configure(EntityTypeBuilder<CronTickerOccurrenceEntity> b)
     {
-        b.ToTable("CronTickerOccurrences", schema);
+        b.ToTable("CronTickerOccurrences", schema, t => { if (excludeFromMigrations) t.ExcludeFromMigrations(); });
         TempusModelBuilderExtensions.ConfigureExecution(b);
         b.HasIndex(x => new { x.Namespace, x.CronTickerId, x.ExecutionTime });
         b.HasIndex(x => new { x.CronTickerId, x.ExecutionTime, x.IsManual });
     }
 }
 
-public sealed class SchedulePolicyConfiguration(string? schema) : IEntityTypeConfiguration<SchedulePolicyEntity>
+public sealed class SchedulePolicyConfiguration(string? schema, bool excludeFromMigrations = false) : IEntityTypeConfiguration<SchedulePolicyEntity>
 {
     public void Configure(EntityTypeBuilder<SchedulePolicyEntity> b)
     {
-        b.ToTable("SchedulePolicies", schema);
+        b.ToTable("SchedulePolicies", schema, t => { if (excludeFromMigrations) t.ExcludeFromMigrations(); });
         b.HasKey(x => x.Id);
-        b.Property(x => x.Namespace).HasMaxLength(512).IsRequired();
+        b.Property(x => x.Namespace).HasMaxLength(128).IsRequired();
         b.Property(x => x.Name).HasMaxLength(256).IsRequired();
         b.Property(x => x.Description).HasMaxLength(1024);
         b.Property(x => x.TimeZoneId).HasMaxLength(128).IsRequired();
@@ -151,14 +152,14 @@ public sealed class SchedulePolicyConfiguration(string? schema) : IEntityTypeCon
     }
 }
 
-public sealed class TempusNodeConfiguration(string? schema) : IEntityTypeConfiguration<TempusNodeEntity>
+public sealed class TempusNodeConfiguration(string? schema, bool excludeFromMigrations = false) : IEntityTypeConfiguration<TempusNodeEntity>
 {
     public void Configure(EntityTypeBuilder<TempusNodeEntity> b)
     {
-        b.ToTable("Nodes", schema);
+        b.ToTable("Nodes", schema, t => { if (excludeFromMigrations) t.ExcludeFromMigrations(); });
         b.HasKey(x => x.OwnerId);
-        b.Property(x => x.OwnerId).HasMaxLength(512);
-        b.Property(x => x.Namespace).HasMaxLength(512).IsRequired();
+        b.Property(x => x.OwnerId).HasMaxLength(256);
+        b.Property(x => x.Namespace).HasMaxLength(128).IsRequired();
         b.Property(x => x.NodeIdentifier).HasMaxLength(256).IsRequired();
         b.Property(x => x.DisplayName).HasMaxLength(256);
         b.Property(x => x.AdvertisedDashboardUrl).HasMaxLength(1024);
@@ -171,14 +172,14 @@ public sealed class TempusNodeConfiguration(string? schema) : IEntityTypeConfigu
     }
 }
 
-public sealed class ControlCommandConfiguration(string? schema) : IEntityTypeConfiguration<ControlCommandEntity>
+public sealed class ControlCommandConfiguration(string? schema, bool excludeFromMigrations = false) : IEntityTypeConfiguration<ControlCommandEntity>
 {
     public void Configure(EntityTypeBuilder<ControlCommandEntity> b)
     {
-        b.ToTable("ControlCommands", schema);
+        b.ToTable("ControlCommands", schema, t => { if (excludeFromMigrations) t.ExcludeFromMigrations(); });
         b.HasKey(x => x.Id);
-        b.Property(x => x.Namespace).HasMaxLength(512).IsRequired();
-        b.Property(x => x.TargetOwnerId).HasMaxLength(512).IsRequired();
+        b.Property(x => x.Namespace).HasMaxLength(128).IsRequired();
+        b.Property(x => x.TargetOwnerId).HasMaxLength(256).IsRequired();
         b.Property(x => x.Command).HasMaxLength(64).IsRequired();
         b.Property(x => x.TickerType).HasConversion<int>();
         b.Property(x => x.CreatedAt).HasConversion(TempusModelBuilderExtensions.UtcConverter);
@@ -187,13 +188,13 @@ public sealed class ControlCommandConfiguration(string? schema) : IEntityTypeCon
     }
 }
 
-public sealed class ExecutionLogConfiguration(string? schema) : IEntityTypeConfiguration<ExecutionLogEntity>
+public sealed class ExecutionLogConfiguration(string? schema, bool excludeFromMigrations = false) : IEntityTypeConfiguration<ExecutionLogEntity>
 {
     public void Configure(EntityTypeBuilder<ExecutionLogEntity> b)
     {
-        b.ToTable("ExecutionLogs", schema);
+        b.ToTable("ExecutionLogs", schema, t => { if (excludeFromMigrations) t.ExcludeFromMigrations(); });
         b.HasKey(x => x.TickerId);
-        b.Property(x => x.Namespace).HasMaxLength(512).IsRequired();
+        b.Property(x => x.Namespace).HasMaxLength(128).IsRequired();
         b.Property(x => x.Function).HasMaxLength(256).IsRequired();
         b.Property(x => x.TickerType).HasConversion<int>();
         b.Property(x => x.UpdatedAt).HasConversion(TempusModelBuilderExtensions.UtcConverter);
@@ -201,14 +202,14 @@ public sealed class ExecutionLogConfiguration(string? schema) : IEntityTypeConfi
     }
 }
 
-public sealed class StoreMetadataConfiguration(string? schema) : IEntityTypeConfiguration<StoreMetadataEntity>
+public sealed class StoreMetadataConfiguration(string? schema, bool excludeFromMigrations = false) : IEntityTypeConfiguration<StoreMetadataEntity>
 {
     public void Configure(EntityTypeBuilder<StoreMetadataEntity> b)
     {
-        b.ToTable("StoreMetadata", schema);
+        b.ToTable("StoreMetadata", schema, t => { if (excludeFromMigrations) t.ExcludeFromMigrations(); });
         b.HasKey(x => new { x.Namespace, x.Key });
-        b.Property(x => x.Namespace).HasMaxLength(512);
-        b.Property(x => x.Key).HasMaxLength(256);
+        b.Property(x => x.Namespace).HasMaxLength(128);
+        b.Property(x => x.Key).HasMaxLength(128);
         b.Property(x => x.UpdatedAt).HasConversion(TempusModelBuilderExtensions.UtcConverter);
     }
 }

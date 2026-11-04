@@ -27,20 +27,20 @@ public class EfCoreTests
         return conn;
     }
 
-    [Fact]
-    public async Task Dedicated_context_runs_jobs_and_chains()
+    [Theory]
+    [MemberData(nameof(TestDatabases.All), MemberType = typeof(TestDatabases))]
+    public async Task Dedicated_context_runs_jobs_and_chains(string provider)
     {
-        using var conn = OpenShared();
+        var database = TestDatabases.NewDatabase(provider);
         await using var host = await TestHost.StartAsync(
-            o => o.AddOperationalStore(s => s.UseTempusDbContext<TempusDbContext>(db => db.UseSqlite(conn.ConnectionString))),
+            o => o.AddOperationalStore(s => s.UseTempusDbContext<TempusDbContext>(database)),
             s => { s.MapTicker<GreetJob, GreetRequest>(); s.MapTicker<ChildJob>(); },
             start: false);
         using (var scope = host.Services.CreateScope())
             await scope.ServiceProvider.GetRequiredService<TempusDbContext>().Database.EnsureCreatedAsync();
         await host.Host.StartAsync();
 
-        var provider = host.Services.GetRequiredService<ITickerPersistenceProvider>();
-        Assert.IsType<EfPersistenceProvider>(provider);
+        Assert.IsType<EfPersistenceProvider>(host.Services.GetRequiredService<ITickerPersistenceProvider>());
 
         var added = (await host.Time.AddChainAsync(c => c.StartWith<GreetJob, GreetRequest>(new GreetRequest("ef")).Then<ChildJob>())).EnsureSuccess();
         var chain = await TestHost.WaitUntilAsync(async () => (await host.Time.GetChainAsync(added.Result!.Id)).ToList(), c => c.Count == 2 && c.All(j => j.Status.IsTerminal()), TimeSpan.FromSeconds(20));
@@ -92,13 +92,13 @@ public class EfCoreTests
         Assert.Null(await host.Time.GetAsync(stagedId));
     }
 
-    [Fact]
-    public async Task Acquisition_is_exclusive_across_two_providers()
+    [Theory]
+    [MemberData(nameof(TestDatabases.All), MemberType = typeof(TestDatabases))]
+    public async Task Acquisition_is_exclusive_across_two_providers(string provider)
     {
-        using var conn = OpenShared();
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddDbContext<TempusDbContext>(db => db.UseSqlite(conn.ConnectionString));
+        services.AddDbContext<TempusDbContext>(TestDatabases.NewDatabase(provider));
         services.AddSingleton(new TempusEfSchema("tempus"));
         var sp = services.BuildServiceProvider();
         using (var scope = sp.CreateScope()) await scope.ServiceProvider.GetRequiredService<TempusDbContext>().Database.EnsureCreatedAsync();

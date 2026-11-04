@@ -16,10 +16,14 @@ public sealed class TempusStartupService : IHostedService
 {
     private readonly TempusSeeder _seeder;
     private readonly TickerFunctionRegistry _registry;
+    private readonly IEnumerable<ITempusStoreInitializer> _initializers;
+    private readonly TempusOptions _options;
     private readonly ILogger<TempusStartupService> _logger;
 
-    public TempusStartupService(TempusSeeder seeder, TickerFunctionRegistry registry, ILogger<TempusStartupService> logger)
+    public TempusStartupService(TempusSeeder seeder, TickerFunctionRegistry registry, IEnumerable<ITempusStoreInitializer> initializers, IOptions<TempusOptions> options, ILogger<TempusStartupService> logger)
     {
+        _initializers = initializers;
+        _options = options.Value;
         _seeder = seeder;
         _registry = registry;
         _logger = logger;
@@ -27,6 +31,9 @@ public sealed class TempusStartupService : IHostedService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        foreach (var initializer in _initializers) await initializer.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        if (_options.Namespace == "default" && _options.ProviderFactory is not null)
+            _logger.LogWarning("Tempus is using the namespace 'default' with a persistent store. Set options.UseApplicationNamespace(...) to a value unique to this application, especially when several applications share one database.");
         _logger.LogInformation("Tempus registered {Count} function(s): {Functions}", _registry.Functions.Count, string.Join(", ", _registry.Functions.Select(f => f.Name)));
         await _seeder.SeedAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -150,6 +157,8 @@ public sealed class LeaseRecoveryService : BackgroundService
 /// <summary>Registers this node and reaps nodes without heartbeats.</summary>
 public sealed class NodeHeartbeatService : BackgroundService
 {
+    private readonly HashSet<string> _warnedOwners = new();
+    private readonly TempusDiagnostics _diagnostics;
     private readonly ITickerPersistenceProvider _provider;
     private readonly TempusOptions _options;
     private readonly TempusRuntimeState _state;
@@ -158,8 +167,9 @@ public sealed class NodeHeartbeatService : BackgroundService
     private readonly ITickerClock _clock;
     private readonly ILogger<NodeHeartbeatService> _logger;
 
-    public NodeHeartbeatService(ITickerPersistenceProvider provider, IOptions<TempusOptions> options, TempusRuntimeState state, TempusHostScheduler scheduler, TickerFunctionRegistry registry, ITickerClock clock, ILogger<NodeHeartbeatService> logger)
+    public NodeHeartbeatService(ITickerPersistenceProvider provider, IOptions<TempusOptions> options, TempusRuntimeState state, TempusHostScheduler scheduler, TickerFunctionRegistry registry, ITickerClock clock, TempusDiagnostics diagnostics, ILogger<NodeHeartbeatService> logger)
     {
+        _diagnostics = diagnostics;
         _provider = provider;
         _options = options.Value;
         _state = state;
@@ -177,9 +187,21 @@ public sealed class NodeHeartbeatService : BackgroundService
             {
                 var now = _clock.UtcNow;
                 await _provider.UpsertNodeAsync(Snapshot(now), stoppingToken).ConfigureAwait(false);
+                var mine = _registry.Functions.Select(f => f.Name).ToHashSet(StringComparer.Ordinal);
                 foreach (var n in await _provider.ListNodesAsync(stoppingToken).ConfigureAwait(false))
+                {
                     if (now - n.LastHeartbeatAt > _options.Scheduler.NodeOfflineAfter)
+                    {
                         await _provider.RemoveNodeAsync(n.OwnerId, stoppingToken).ConfigureAwait(false);
+                        continue;
+                    }
+                    if (n.OwnerId == _state.OwnerId || mine.SetEquals(n.Functions) || !_warnedOwners.Add(n.OwnerId)) continue;
+                    var message = $"Node '{n.NodeIdentifier}' ({n.MachineName}) in namespace '{_options.Namespace}' registers different functions than this node. " +
+                        "That is expected during a rolling deployment, but if it is a different application, give each application its own UseApplicationNamespace(...) value: " +
+                        "nodes in one namespace pick up each other's jobs.";
+                    _logger.LogWarning("{Message}", message);
+                    _diagnostics.Warn(message);
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception ex) { _logger.LogWarning(ex, "Node heartbeat failed."); }

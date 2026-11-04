@@ -47,11 +47,30 @@ public sealed class TempusEfStoreBuilder
     }
 
     public TempusEfStoreBuilder UseSchema(string schema) { Schema = schema; return this; }
+
+    internal bool AutoProvision { get; private set; }
+
+    /// <summary>
+    /// Let Tempus create and version its own tables at startup instead of relying on your EF migrations.
+    /// Use this when several applications share one database: every application points at the same schema,
+    /// uses its own <c>UseApplicationNamespace(...)</c>, and none of them has to migrate the Tempus tables.
+    /// With <see cref="UseApplicationDbContext{TContext}"/> the tables are still mapped (so StageAsync works) but
+    /// excluded from that context's migrations.
+    /// </summary>
+    public TempusEfStoreBuilder AutoProvisionTables(bool enabled = true) { AutoProvision = enabled; return this; }
 }
 
 /// <summary>Carries the schema name to model configuration.</summary>
 public sealed class TempusEfSchema
 {
-    public TempusEfSchema(string schema) => Schema = schema;
+    public TempusEfSchema(string schema, bool excludeFromMigrations = false)
+    {
+        Schema = schema;
+        ExcludeFromMigrations = excludeFromMigrations;
+    }
+
     public string Schema { get; }
+
+    /// <summary>True when Tempus provisions its own tables, so they are left out of the application's migrations.</summary>
+    public bool ExcludeFromMigrations { get; }
 }

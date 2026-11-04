@@ -40,7 +40,8 @@ public sealed class TempusOptionsBuilder
     {
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Namespace is required.", nameof(name));
         name = name.Trim().Normalize(System.Text.NormalizationForm.FormC);
-        if (System.Text.Encoding.UTF8.GetByteCount(name) > 512) throw new ArgumentException("Namespace must be at most 512 UTF-8 bytes.", nameof(name));
+        if (name.Length > 128) throw new ArgumentException("Namespace must be at most 128 characters.", nameof(name));
+        if (name.StartsWith('$')) throw new ArgumentException("Namespaces starting with '$' are reserved for Tempus.", nameof(name));
         Options.Namespace = name;
         return this;
     }

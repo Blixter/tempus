@@ -2,12 +2,30 @@ name: CI
 
 on:
   push:
-    branches: [master, main]
+    branches: [main]
   pull_request:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    # Real databases for the storage tests. Ports match ./build.sh db-up.
+    # No credentials are stored: PostgreSQL uses trust auth, the Cosmos DB emulator accepts any key,
+    # and SQL Server gets a random password generated for this run (see the step below).
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+      cosmos:
+        image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext-preview
+        env:
+          PROTOCOL: http
+        ports: ['58081:8081']
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -16,10 +34,32 @@ jobs:
             8.0.x
             9.0.x
             10.0.x
-      - name: Build and test
+
+      - name: Start SQL Server and wait for the databases
+        run: |
+          random=$(openssl rand -hex 12)
+          sa_secret="Tt1!${random}"   # SQL Server requires upper, lower, digit and symbol
+          echo "::add-mask::$sa_secret"
+          docker run -d --name tempus-mssql -e ACCEPT_EULA=Y -e "MSSQL_SA_PASSWORD=$sa_secret" -p 51433:1433 mcr.microsoft.com/mssql/server:2022-latest
+          {
+            echo "TEMPUS_TEST_POSTGRES=Host=127.0.0.1;Port=55432;Username=postgres"
+            echo "TEMPUS_TEST_SQLSERVER=Server=127.0.0.1,51433;User Id=sa;Password=${sa_secret};TrustServerCertificate=true"
+            echo "TEMPUS_TEST_COSMOS=AccountEndpoint=http://127.0.0.1:58081/;AccountKey=$(printf 'tempus-emulator' | base64);"
+          } >> "$GITHUB_ENV"
+          for i in $(seq 1 90); do
+            sql=$(docker logs tempus-mssql 2>&1 || true)
+            cosmos=$(docker logs ${{ job.services.cosmos.id }} 2>&1 || true)
+            if [[ $sql == *"Recovery is complete"* && $cosmos == *"Gateway=OK"* ]]; then echo "ready"; exit 0; fi
+            sleep 2
+          done
+          echo "databases did not become ready"; exit 1
+
+      - name: Build and test (SQLite, PostgreSQL, SQL Server, Cosmos DB)
         run: ./build.sh test
+
       - name: Pack (preview version)
         run: ./build.sh pack "$(sed -n 's:.*<VersionPrefix>\(.*\)</VersionPrefix>.*:\1:p' Directory.Build.props)-ci.${{ github.run_number }}"
+
       - uses: actions/upload-artifact@v4
         with:
           name: packages

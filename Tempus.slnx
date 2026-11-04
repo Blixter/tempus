@@ -3,6 +3,7 @@
     <Project Path="samples/Tempus.Sample/Tempus.Sample.csproj" />
   </Folder>
   <Folder Name="/src/">
+    <Project Path="src/Tempus.Cosmos/Tempus.Cosmos.csproj" />
     <Project Path="src/Tempus.Dashboard/Tempus.Dashboard.csproj" />
     <Project Path="src/Tempus.EntityFrameworkCore/Tempus.EntityFrameworkCore.csproj" />
     <Project Path="src/Tempus.Integrations/Tempus.Integrations.csproj" />

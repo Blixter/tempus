@@ -20,5 +20,6 @@
     <InternalsVisibleTo Include="Tempus.Dashboard" />
     <InternalsVisibleTo Include="Tempus.EntityFrameworkCore" />
     <InternalsVisibleTo Include="Tempus.Integrations" />
+    <InternalsVisibleTo Include="Tempus.Cosmos" />
   </ItemGroup>
 </Project>

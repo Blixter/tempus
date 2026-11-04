@@ -440,7 +440,7 @@ public sealed class EfPersistenceProvider : ITickerPersistenceProvider
     public async Task<IReadOnlyList<ControlCommandEntity>> DequeueControlCommandsAsync(string ownerId, DateTime now, CancellationToken ct = default)
     {
         await using var c = Open();
-        await c.Db.Set<ControlCommandEntity>().Where(x => x.ExpiresAt < now).ExecuteDeleteAsync(ct).ConfigureAwait(false);
+        await c.Db.Set<ControlCommandEntity>().Where(x => x.Namespace == Namespace && x.ExpiresAt < now).ExecuteDeleteAsync(ct).ConfigureAwait(false);
         var mine = await c.Db.Set<ControlCommandEntity>().AsNoTracking().Where(x => x.TargetOwnerId == ownerId).ToListAsync(ct).ConfigureAwait(false);
         if (mine.Count > 0)
         {

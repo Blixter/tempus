@@ -31,7 +31,7 @@
 
   async function api(path, opts) {
     opts = opts || {};
-    const init = { method: opts.method || 'GET', headers: { 'Accept': 'application/json' } };
+    const init = { method: opts.method || 'GET', cache: 'no-store', headers: { 'Accept': 'application/json' } };
     if (opts.body !== undefined) { init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(opts.body); }
     let res;
     try { res = await fetch(API + path, init); }

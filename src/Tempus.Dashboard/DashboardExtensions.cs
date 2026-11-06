@@ -37,6 +37,8 @@ public static class TempusDashboardExtensions
             options.PreDashboardMiddleware?.Invoke(branch);
             branch.Use(async (ctx, next) =>
             {
+                // Never let a proxy/CDN or the browser cache API reads (including 401/403/404): a stale GET undoes a just-applied change.
+                if (ctx.Request.Path.StartsWithSegments("/api")) ctx.Response.Headers.CacheControl = "no-store";
                 var auth = ctx.RequestServices.GetRequiredService<DashboardAuthenticator>();
                 var result = await auth.AuthenticateAsync(ctx);
                 if (result.IsThrottled)
@@ -97,10 +99,13 @@ public static class TempusDashboardExtensions
     }
 
     private static readonly Assembly Assembly = typeof(TempusDashboardExtensions).Assembly;
+    private static readonly string AssetVersion = Uri.EscapeDataString(
+        Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? Assembly.GetName().Version?.ToString() ?? "0");
     private static readonly string ResourcePrefix = typeof(TempusDashboardExtensions).Namespace + ".wwwroot.";
 
     private static async Task ServeStatic(string? path, HttpContext ctx, DashboardOptions options)
     {
+        if (ctx.Request.Path.StartsWithSegments("/api")) { ctx.Response.StatusCode = 404; return; }   // unknown API route: not the SPA fallback; no-store is already set
         path = string.IsNullOrEmpty(path) ? "index.html" : path;
         var resourceName = ResourcePrefix + path.Replace('/', '.');
         var stream = Assembly.GetManifestResourceStream(resourceName);
@@ -110,7 +115,7 @@ public static class TempusDashboardExtensions
             stream = Assembly.GetManifestResourceStream(resourceName);
             path = "index.html";
         }
-        if (stream is null) { ctx.Response.StatusCode = 404; return; }
+        if (stream is null) { ctx.Response.StatusCode = 404; ctx.Response.Headers.CacheControl = "no-store"; return; }
         ctx.Response.ContentType = Path.GetExtension(path) switch
         {
             ".html" => "text/html; charset=utf-8",
@@ -122,12 +127,13 @@ public static class TempusDashboardExtensions
             ".json" => "application/json",
             _ => "application/octet-stream",
         };
-        ctx.Response.Headers.CacheControl = path == "index.html" ? "no-cache" : "public, max-age=3600";
+        // index.html embeds PathBase and config, so it must revalidate. Assets are referenced as ?v=<version>, so a new release gets a new URL.
+        ctx.Response.Headers.CacheControl = path == "index.html" ? "no-cache" : "public, max-age=31536000, immutable";
         if (path == "index.html")
         {
             using var reader = new StreamReader(stream);
             var html = await reader.ReadToEndAsync();
-            html = html.Replace("__TEMPUS_BASE__", ctx.Request.PathBase.Value ?? options.BasePath).Replace("__TEMPUS_TITLE__", System.Net.WebUtility.HtmlEncode(options.Title));
+            html = html.Replace("__TEMPUS_BASE__", ctx.Request.PathBase.Value ?? options.BasePath).Replace("__TEMPUS_VERSION__", AssetVersion).Replace("__TEMPUS_TITLE__", System.Net.WebUtility.HtmlEncode(options.Title));
             await ctx.Response.WriteAsync(html);
             return;
         }

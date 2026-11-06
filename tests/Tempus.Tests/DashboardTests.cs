@@ -147,4 +147,25 @@ public class DashboardTests
         Assert.StartsWith("/api/storefront/login?returnUrl=", redirect.Headers.Location!.OriginalString);
 
     }
+
+    [Fact]
+    public async Task Cache_headers_keep_api_fresh_and_assets_versioned()
+    {
+        using var host = await StartAsync(d => d.WithBasicAuth("admin", "secret"));
+        var client = host.GetTestClient();
+        Assert.Equal("no-store", (await client.GetAsync("/tempus/api/meta")).Headers.CacheControl?.ToString());
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes("admin:secret")));
+        Assert.Equal("no-store", (await client.GetAsync("/tempus/api/meta")).Headers.CacheControl?.ToString());
+        Assert.Equal("no-store", (await client.GetAsync("/tempus/api/nope")).Headers.CacheControl?.ToString());
+
+        var index = await client.GetAsync("/tempus");
+        Assert.Equal("no-cache", index.Headers.CacheControl?.ToString());
+        var html = await index.Content.ReadAsStringAsync();
+        Assert.Matches(@"/tempus/app\.js\?v=[^""]+""", html);
+        Assert.DoesNotContain("__TEMPUS_VERSION__", html);
+
+        var js = await client.GetAsync("/tempus/app.js");
+        Assert.Contains("immutable", js.Headers.CacheControl?.ToString());
+    }
 }

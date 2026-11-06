@@ -114,4 +114,37 @@ public class DashboardTests
         Assert.Equal(HttpStatusCode.OK, spa.StatusCode);
         Assert.DoesNotContain("__TEMPUS_BASE__", await spa.Content.ReadAsStringAsync());
     }
+
+    [Fact]
+    public async Task Host_path_base_prefixes_page_urls_and_login_redirects()
+    {
+        using var host = new HostBuilder()
+            .ConfigureLogging(l => l.ClearProviders())
+            .ConfigureWebHost(web =>
+            {
+                web.UseTestServer();
+                web.ConfigureServices(s =>
+                {
+                    s.AddRouting();
+                    s.AddAuthentication();
+                    s.AddTempus(o =>
+                    {
+                        o.UseApplicationNamespace("dashpb");
+                        o.DisableAttributeDiscovery();
+                        o.AddDashboard(d => d.WithHostAuthentication(null, "/login"));
+                    });
+                });
+                web.Configure(app =>
+                {
+                    app.Use((ctx, next) => { ctx.Request.PathBase = "/api/storefront"; return next(); });
+                    app.UseTempus();
+                });
+            }).Build();
+        await host.StartAsync();
+        var client = host.GetTestClient();
+        var redirect = await client.GetAsync("/tempus");
+        Assert.Equal(HttpStatusCode.Redirect, redirect.StatusCode);
+        Assert.StartsWith("/api/storefront/login?returnUrl=", redirect.Headers.Location!.OriginalString);
+
+    }
 }

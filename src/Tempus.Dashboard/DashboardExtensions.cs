@@ -50,7 +50,7 @@ public static class TempusDashboardExtensions
                     var isApi = ctx.Request.Path.StartsWithSegments("/api");
                     if (!isApi && auth.HostScheme?.LoginRedirectPath is { } redirect)
                     {
-                        ctx.Response.Redirect(redirect + "?returnUrl=" + Uri.EscapeDataString(ctx.Request.PathBase + ctx.Request.Path));
+                        ctx.Response.Redirect(HostPrefix(ctx, basePath) + redirect + "?returnUrl=" + Uri.EscapeDataString(ctx.Request.PathBase + ctx.Request.Path));
                         return;
                     }
                     ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
@@ -89,6 +89,13 @@ public static class TempusDashboardExtensions
         return app;
     }
 
+    /// <summary>The host's own PathBase (e.g. a stripped proxy prefix). Inside the mapped branch PathBase is that prefix plus BasePath.</summary>
+    private static string HostPrefix(HttpContext ctx, string basePath)
+    {
+        var full = ctx.Request.PathBase.Value ?? "";
+        return full.EndsWith(basePath, StringComparison.OrdinalIgnoreCase) ? full[..^basePath.Length] : "";
+    }
+
     private static readonly Assembly Assembly = typeof(TempusDashboardExtensions).Assembly;
     private static readonly string ResourcePrefix = typeof(TempusDashboardExtensions).Namespace + ".wwwroot.";
 
@@ -120,7 +127,7 @@ public static class TempusDashboardExtensions
         {
             using var reader = new StreamReader(stream);
             var html = await reader.ReadToEndAsync();
-            html = html.Replace("__TEMPUS_BASE__", options.BasePath).Replace("__TEMPUS_TITLE__", System.Net.WebUtility.HtmlEncode(options.Title));
+            html = html.Replace("__TEMPUS_BASE__", ctx.Request.PathBase.Value ?? options.BasePath).Replace("__TEMPUS_TITLE__", System.Net.WebUtility.HtmlEncode(options.Title));
             await ctx.Response.WriteAsync(html);
             return;
         }

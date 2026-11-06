@@ -8,7 +8,10 @@ namespace Tempus.EntityFrameworkCore;
 /// <summary>Dedicated DbContext for the operational store. Add migrations against it with <c>--context TempusDbContext</c>.</summary>
 public class TempusDbContext : DbContext
 {
-    public TempusDbContext(DbContextOptions options) : base(options) { }
+    public TempusDbContext(DbContextOptions<TempusDbContext> options) : base(options) { }
+
+    /// <summary>For subclasses, which pass their own <c>DbContextOptions&lt;TSubclass&gt;</c>.</summary>
+    protected TempusDbContext(DbContextOptions options) : base(options) { }
 
     /// <summary>Schema used when no <see cref="TempusEfSchema"/> is registered in the application services.</summary>
     public string Schema { get; set; } = "tempus";

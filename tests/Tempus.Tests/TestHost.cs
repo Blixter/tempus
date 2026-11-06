@@ -127,7 +127,7 @@ public sealed class SlowJob : ITickerFunction
         for (var i = 1; i <= 50; i++)
         {
             await Task.Delay(100, cancellationToken);
-            if (i % 10 == 0) await context.ReportProgressAsync(i * 2, $"step {i}", cancellationToken);
+            if (i == 1 || i % 10 == 0) await context.ReportProgressAsync(i * 2, $"step {i}", cancellationToken);
         }
     }
 }
